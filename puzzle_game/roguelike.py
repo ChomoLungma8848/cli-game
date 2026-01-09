@@ -474,43 +474,55 @@ def draw_game(stdscr, game):
 
     # Draw sidebar
     sidebar_x = dungeon.width + 2
+    max_y, max_x = stdscr.getmaxyx()
 
-    stdscr.addstr(1, sidebar_x, "ROGUELIKE", curses.color_pair(COLOR_UI) | curses.A_BOLD)
-    stdscr.addstr(2, sidebar_x, "=" * 15, curses.color_pair(COLOR_WALL))
-
-    stdscr.addstr(4, sidebar_x, f"Level: {player.level}", curses.color_pair(COLOR_UI))
-    stdscr.addstr(5, sidebar_x, f"HP: {player.hp}/{player.max_hp}", curses.color_pair(2 if player.hp > player.max_hp // 3 else 5))
-    stdscr.addstr(6, sidebar_x, f"ATK: {player.get_attack()}", curses.color_pair(COLOR_UI))
-    stdscr.addstr(7, sidebar_x, f"DEF: {player.get_defense()}", curses.color_pair(COLOR_UI))
-    stdscr.addstr(8, sidebar_x, f"EXP: {player.exp}/{player.exp_to_level}", curses.color_pair(COLOR_UI))
-    stdscr.addstr(9, sidebar_x, f"Gold: {player.gold}", curses.color_pair(3))
-    stdscr.addstr(10, sidebar_x, f"Floor: {game.dungeon_level}", curses.color_pair(COLOR_UI))
-
-    # Equipment
-    stdscr.addstr(12, sidebar_x, "Equipment:", curses.color_pair(COLOR_UI) | curses.A_BOLD)
-    weapon_name = player.equipped_weapon.name if player.equipped_weapon else "None"
-    armor_name = player.equipped_armor.name if player.equipped_armor else "None"
-    stdscr.addstr(13, sidebar_x, f"Wpn: {weapon_name[:12]}", curses.color_pair(COLOR_UI))
-    stdscr.addstr(14, sidebar_x, f"Arm: {armor_name[:12]}", curses.color_pair(COLOR_UI))
-
-    # Inventory
-    potions = sum(1 for item in player.inventory if item.item_type == 'potion')
-    stdscr.addstr(16, sidebar_x, f"Potions: {potions}", curses.color_pair(COLOR_ITEM))
-    stdscr.addstr(17, sidebar_x, "P: Use potion", curses.color_pair(COLOR_WALL))
-
-    # Messages
-    msg_y = dungeon.height + 2
-    stdscr.addstr(msg_y, 0, "-" * dungeon.width, curses.color_pair(COLOR_WALL))
-    for i, msg in enumerate(game.messages[-3:]):
+    def safe_addstr(y, x, text, attr=0):
+        """Safely add string, avoiding cursor at last position error."""
         try:
-            stdscr.addstr(msg_y + 1 + i, 0, msg[:dungeon.width], curses.color_pair(COLOR_UI))
+            if y < max_y and x < max_x:
+                # Truncate text if it would go beyond screen
+                available = max_x - x - 1
+                if available > 0:
+                    stdscr.addstr(y, x, text[:available], attr)
         except curses.error:
             pass
 
+    safe_addstr(1, sidebar_x, "ROGUELIKE", curses.color_pair(COLOR_UI) | curses.A_BOLD)
+    safe_addstr(2, sidebar_x, "=" * 15, curses.color_pair(COLOR_WALL))
+
+    safe_addstr(4, sidebar_x, f"Level: {player.level}", curses.color_pair(COLOR_UI))
+    safe_addstr(5, sidebar_x, f"HP: {player.hp}/{player.max_hp}", curses.color_pair(2 if player.hp > player.max_hp // 3 else 5))
+    safe_addstr(6, sidebar_x, f"ATK: {player.get_attack()}", curses.color_pair(COLOR_UI))
+    safe_addstr(7, sidebar_x, f"DEF: {player.get_defense()}", curses.color_pair(COLOR_UI))
+    safe_addstr(8, sidebar_x, f"EXP: {player.exp}/{player.exp_to_level}", curses.color_pair(COLOR_UI))
+    safe_addstr(9, sidebar_x, f"Gold: {player.gold}", curses.color_pair(3))
+    safe_addstr(10, sidebar_x, f"Floor: {game.dungeon_level}", curses.color_pair(COLOR_UI))
+
+    # Equipment
+    safe_addstr(12, sidebar_x, "Equipment:", curses.color_pair(COLOR_UI) | curses.A_BOLD)
+    weapon_name = player.equipped_weapon.name if player.equipped_weapon else "None"
+    armor_name = player.equipped_armor.name if player.equipped_armor else "None"
+    safe_addstr(13, sidebar_x, f"Wpn: {weapon_name[:12]}", curses.color_pair(COLOR_UI))
+    safe_addstr(14, sidebar_x, f"Arm: {armor_name[:12]}", curses.color_pair(COLOR_UI))
+
+    # Inventory
+    potions = sum(1 for item in player.inventory if item.item_type == 'potion')
+    safe_addstr(16, sidebar_x, f"Potions: {potions}", curses.color_pair(COLOR_ITEM))
+    safe_addstr(17, sidebar_x, "P: Use potion", curses.color_pair(COLOR_WALL))
+
+    # Messages
+    msg_y = dungeon.height + 2
+    if msg_y < max_y:
+        safe_addstr(msg_y, 0, "-" * min(dungeon.width, max_x - 1), curses.color_pair(COLOR_WALL))
+    for i, msg in enumerate(game.messages[-3:]):
+        if msg_y + 1 + i < max_y:
+            safe_addstr(msg_y + 1 + i, 0, msg[:dungeon.width], curses.color_pair(COLOR_UI))
+
     # Controls
     controls_y = dungeon.height + 6
-    stdscr.addstr(controls_y, 0, "Move: Arrows/WASD | G: Get | >: Descend | Q: Quit",
-                  curses.color_pair(COLOR_WALL))
+    if controls_y < max_y:
+        safe_addstr(controls_y, 0, "Move: Arrows/WASD | G: Get | >: Descend | Q: Quit",
+                    curses.color_pair(COLOR_WALL))
 
     # Game over overlay
     if game.game_over:
@@ -569,8 +581,11 @@ def draw_title(stdscr, width, height):
             pass
 
     subtitle = "~ Dungeon Crawler ~"
-    stdscr.addstr(start_y + 6, width // 2 - len(subtitle) // 2, subtitle,
-                  curses.color_pair(3))
+    try:
+        stdscr.addstr(start_y + 6, max(0, width // 2 - len(subtitle) // 2), subtitle,
+                      curses.color_pair(3))
+    except curses.error:
+        pass
 
     instructions = [
         "",
@@ -606,7 +621,11 @@ def init_colors():
     curses.init_pair(5, curses.COLOR_RED, -1)
     curses.init_pair(6, curses.COLOR_CYAN, -1)
     curses.init_pair(7, curses.COLOR_WHITE, -1)
-    curses.init_pair(8, 8, -1)
+    # Use gray (color 8) if available, otherwise fall back to white
+    if curses.COLORS > 8:
+        curses.init_pair(8, 8, -1)
+    else:
+        curses.init_pair(8, curses.COLOR_WHITE, -1)
 
 
 def main(stdscr):
@@ -615,6 +634,21 @@ def main(stdscr):
     init_colors()
 
     height, width = stdscr.getmaxyx()
+
+    # Minimum size check
+    min_width = 60
+    min_height = 20
+    if width < min_width or height < min_height:
+        stdscr.clear()
+        msg = f"Terminal too small! Need {min_width}x{min_height}, got {width}x{height}"
+        try:
+            stdscr.addstr(0, 0, msg[:width-1])
+            stdscr.addstr(1, 0, "Please resize your terminal and restart."[:width-1])
+        except curses.error:
+            pass
+        stdscr.refresh()
+        stdscr.getch()
+        return
 
     # Title screen
     draw_title(stdscr, width, height)
@@ -652,9 +686,27 @@ def main(stdscr):
 
 
 if __name__ == '__main__':
+    import sys
+    import os
+
+    # Check if running in a proper terminal
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        print("Error: This game requires an interactive terminal.")
+        print("Please run this game directly from a terminal (not through a pipe or script).")
+        sys.exit(1)
+
+    # Set TERM if not set
+    if 'TERM' not in os.environ:
+        os.environ['TERM'] = 'xterm-256color'
+
     try:
         curses.wrapper(main)
     except KeyboardInterrupt:
         pass
+    except curses.error as e:
+        print(f"\nTerminal error: {e}")
+        print("This game requires a terminal that supports curses.")
+        print("Try running in a different terminal emulator.")
+        sys.exit(1)
     finally:
         print("\nThanks for playing Roguelike! Goodbye!\n")
